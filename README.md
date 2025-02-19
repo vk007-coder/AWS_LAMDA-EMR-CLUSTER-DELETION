@@ -1,4 +1,4 @@
-# AWS Lambda EMR Cluster Terminator
+# AWS Lambda EMR Cluster Termination
 
 ## Overview
 
@@ -10,6 +10,7 @@ This AWS Lambda function dynamically identifies the region of an EMR cluster and
 - Checks if the cluster is already terminated before attempting to terminate it.
 - Handles multiple AWS regions specified in environment variables.
 - Logs relevant messages for tracking in AWS CloudWatch.
+- EMR clusters will be automatically deleted from the system within 2-3 months.
 
 ## Prerequisites
 
@@ -42,6 +43,60 @@ Create an IAM role with the following permissions to allow Lambda to describe an
         }
     ]
 }
+```
+
+## Code Explanation
+
+The Lambda function follows these steps:
+
+1. **Extract Cluster ID:** The function retrieves the EMR cluster ID from the event input.
+2. **Identify Cluster Region:** It determines the cluster's region dynamically using the `EMR_REGIONS` environment variable.
+3. **Describe the Cluster:** Using `describe_cluster`, it checks if the cluster is active, terminated, or non-existent.
+4. **Terminate the Cluster:** If the cluster is active, it triggers a termination request using `terminate_job_flows`.
+5. **Handle Logs Cleanup (Optional):** If enabled, it can also clean up associated logs stored in an S3 bucket.
+6. **Return Status:** The function returns a JSON response indicating success, failure, or if the cluster was already terminated.
+
+### Main Code Logic Snippet
+
+```python
+import boto3
+import os
+from botocore.exceptions import ClientError
+
+def terminate_cluster(cluster_id, emr_client):
+    """Terminates the specified EMR cluster."""
+    try:
+        response = emr_client.terminate_job_flows(JobFlowIds=[cluster_id])
+        if response['ResponseMetadata']['HTTPStatusCode'] == 200:
+            return {"status": "success", "message": f"EMR Cluster {cluster_id} termination initiated."}
+    except ClientError as e:
+        return {"status": "failed", "message": f"Error terminating cluster: {e.response['Error']['Message']}"}
+
+def get_cluster_status(cluster_id, emr_client):
+    """Fetches the status of the specified EMR cluster."""
+    try:
+        response = emr_client.describe_cluster(ClusterId=cluster_id)
+        return response['Cluster']['Status']['State']
+    except ClientError:
+        return "NOT_FOUND"
+
+def lambda_handler(event, context):
+    """AWS Lambda function to terminate an EMR cluster."""
+    cluster_id = event.get("ClusterId")
+    if not cluster_id:
+        return {"status": "failed", "message": "ClusterId is required."}
+
+    region = os.getenv("EMR_REGION", "us-east-1")
+    emr_client = boto3.client('emr', region_name=region)
+
+    cluster_status = get_cluster_status(cluster_id, emr_client)
+
+    if cluster_status == "TERMINATED":
+        return {"status": "info", "message": f"Cluster {cluster_id} is already terminated."}
+    elif cluster_status == "NOT_FOUND":
+        return {"status": "failed", "message": f"Cluster {cluster_id} not found."}
+    
+    return terminate_cluster(cluster_id, emr_client)
 ```
 
 ## EMR Cluster Creation
@@ -128,6 +183,4 @@ Replace `s3://my-emr-logs/` with your desired S3 bucket for logs.
 - **Access Denied Errors:** Ensure your IAM role has the correct EMR permissions.
 - **Invalid Region Error:** Check the `EMR_REGIONS` environment variable for whitespace or incorrect values.
 - **Cluster Not Found:** Verify that the provided `ClusterId` is correct and the cluster exists.
-
-.
 
