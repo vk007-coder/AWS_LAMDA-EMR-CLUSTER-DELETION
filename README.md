@@ -24,6 +24,54 @@ This AWS Lambda function dynamically identifies the region of an EMR cluster and
 | ------------- | ------------------------------------------------------------------------------------------- |
 | `EMR_REGIONS` | Comma-separated list of AWS regions to search for the EMR cluster. Defaults to `us-east-1`. |
 
+## IAM Role Permissions
+
+Create an IAM role with the following permissions to allow Lambda to describe and terminate EMR clusters:
+
+```json
+{
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Effect": "Allow",
+            "Action": [
+                "elasticmapreduce:DescribeCluster",
+                "elasticmapreduce:TerminateJobFlows"
+            ],
+            "Resource": "*"
+        }
+    ]
+}
+```
+
+## EMR Cluster Creation
+
+### Creating an EMR Cluster via AWS Console:
+1. Navigate to the **AWS EMR Console**.
+2. Click **Create Cluster**.
+3. Select **Go to advanced options**.
+4. Choose applications like **Hadoop, Spark, Hive, etc.**
+5. Configure the cluster with:
+   - **Instance Type:** `m5.xlarge` (or as needed)
+   - **Number of Instances:** `3` (or more based on workload)
+6. Choose an appropriate **EC2 Key Pair** for SSH access.
+7. Click **Create Cluster** and note down the **Cluster ID**.
+
+### Creating an EMR Cluster via AWS CLI:
+Use the following AWS CLI command to create an EMR cluster:
+
+```sh
+aws emr create-cluster \
+    --name "MyEMRCluster" \
+    --release-label emr-6.6.0 \
+    --applications Name=Hadoop Name=Spark \
+    --instance-groups InstanceGroupType=MASTER,InstanceCount=1,InstanceType=m5.xlarge \
+                      InstanceGroupType=CORE,InstanceCount=2,InstanceType=m5.xlarge \
+    --use-default-roles \
+    --log-uri s3://my-emr-logs/
+```
+
+Replace `s3://my-emr-logs/` with your desired S3 bucket for logs.
 
 ## Deployment Steps
 
@@ -81,5 +129,5 @@ This AWS Lambda function dynamically identifies the region of an EMR cluster and
 - **Invalid Region Error:** Check the `EMR_REGIONS` environment variable for whitespace or incorrect values.
 - **Cluster Not Found:** Verify that the provided `ClusterId` is correct and the cluster exists.
 
-
+.
 
